@@ -1,13 +1,5 @@
 pub fn run(allocator: std.mem.Allocator, pairs: []const Pair) !void {
     _ = allocator;
-    // const sock = try std.posix.socket(std.posix.AF_INET, std.posix.SOCK.STREAM, std.posix.IPPROTO.TCP);
-    // errdefer {
-    //     std.posix.close(sock);
-    //     sock = -1;
-    // }
-    //
-    // try std.posix.setsockopt(sock, std.posix.SOL.SOCKET, std.posix.SO.REUSEADDR, &std.mem.toBytes(@as(c_int, 1)));
-    // try std.posix.setsockopt(sock, std.posix.SOL.SOCKET, std.posix.SO.KEEPALIVE, &std.mem.toBytes(@as(c_int, 1)));
     const addr = try std.net.Address.parseIp("0.0.0.0", 44332);
 
     var server = std.net.Address.listen(addr, .{ .reuse_address = true }) catch |err| switch (err) {
@@ -49,11 +41,6 @@ pub fn run(allocator: std.mem.Allocator, pairs: []const Pair) !void {
     }
 }
 
-fn rn_send_magic_packet(pair: Pair) !void {
-    // setup address with wol port.
-    var addr = try std.net.Address.parseIp(pair.ip, 9);
-}
-
 fn send_magic_packet(pair: Pair) !void {
     const timeout: std.posix.timeval = .{ .sec = 5, .usec = 0 };
     const sock = try std.posix.socket(
@@ -65,18 +52,14 @@ fn send_magic_packet(pair: Pair) !void {
     try std.posix.setsockopt(sock, std.posix.SOL.SOCKET, std.posix.SO.RCVTIMEO, &std.mem.toBytes(timeout));
 
     var addr = try std.net.Address.parseIp(pair.ip, 9);
-    try std.posix.bind(sock, &addr.any, addr.getOsSockLen());
 
     var magic: [102]u8 = undefined;
-    @memcpy(magic[0..], pair.mac);
-
-    log.info("magic: {x}", .{magic});
+    @memcpy(magic[0..6], &[_]u8{ 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF });
 
     var i: usize = 1;
+    while (i <= 16) : (i += 1) @memcpy(magic[i * 6 .. (i + 1) * 6], pair.mac[0..6]);
 
-    while (i <= 16) : (i += 1) {
-        @memcpy(magic[i * 6 .. (i + 1) * 6], magic[0..6]);
-    }
+    log.info("magic: {x}", .{magic});
 
     _ = std.posix.sendto(sock, magic[0..], 0, &addr.any, addr.getOsSockLen()) catch |err| switch (err) {
         error.AccessDenied => {
